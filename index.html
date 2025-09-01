@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Friend Chat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        /* Default: Neutral Theme */
+        --color-bg-body: 226 12% 94%; /* slate-100 */
+        --color-bg-main: 255 100% 100%; /* white */
+        --color-primary-600: 79 70% 50%; /* indigo-600 */
+        --color-primary-700: 79 70% 45%; /* indigo-700 */
+        --color-user-bubble: 214 89% 52%; /* blue-600 */
+        --color-ai-bubble: 226 12% 90%;   /* slate-200 */
+        --color-text-strong: 224 23% 22%; /* slate-800 */
+        --color-text-subtle: 224 14% 35%; /* slate-600 */
+        --color-input-bg: 226 12% 94%;  /* slate-100 */
+        --color-border: 226 12% 88%;      /* slate-200 */
+      }
+      [data-theme='happy'] {
+        --color-bg-body: 45 93% 96%; /* yellow-50 */
+        --color-bg-main: 255 100% 100%; /* white */
+        --color-primary-600: 38 92% 50%;  /* amber-500 */
+        --color-primary-700: 38 92% 45%;  /* amber-600 */
+        --color-user-bubble: 43 96% 56%;  /* yellow-400 */
+        --color-ai-bubble: 45 85% 90%;    /* yellow-100 */
+        --color-text-strong: 40 50% 20%;  /* stone-800 */
+        --color-text-subtle: 40 30% 35%;  /* stone-600 */
+        --color-input-bg: 45 93% 96%;   /* yellow-50 */
+        --color-border: 45 85% 85%;       /* yellow-200 */
+      }
+      [data-theme='sad'] {
+        --color-bg-body: 215 28% 95%; /* slate-100 */
+        --color-bg-main: 255 100% 100%; /* white */
+        --color-primary-600: 206 91% 65%; /* sky-500 */
+        --color-primary-700: 206 91% 60%; /* sky-600 */
+        --color-user-bubble: 221 83% 53%; /* indigo-500 */
+        --color-ai-bubble: 220 13% 91%;   /* gray-200 */
+        --color-text-strong: 224 23% 22%; /* slate-800 */
+        --color-text-subtle: 224 14% 35%; /* slate-600 */
+        --color-input-bg: 220 14% 96%;  /* gray-100 */
+        --color-border: 220 13% 88%;      /* gray-200 */
+      }
+      [data-theme='playful'] {
+        --color-bg-body: 333 100% 97%; /* pink-50 */
+        --color-bg-main: 255 100% 100%; /* white */
+        --color-primary-600: 325 81% 60%; /* fuchsia-500 */
+        --color-primary-700: 325 81% 55%; /* fuchsia-600 */
+        --color-user-bubble: 336 82% 61%; /* pink-500 */
+        --color-ai-bubble: 333 100% 95%;  /* pink-100 */
+        --color-text-strong: 337 38% 28%; /* rose-800 */
+        --color-text-subtle: 337 28% 42%; /* rose-600 */
+        --color-input-bg: 333 100% 97%; /* pink-50 */
+        --color-border: 333 100% 92%;     /* pink-200 */
+      }
+      [data-theme='curious'] {
+        --color-bg-body: 167 36% 96%; /* teal-50 */
+        --color-bg-main: 255 100% 100%; /* white */
+        --color-primary-600: 162 82% 40%; /* teal-600 */
+        --color-primary-700: 162 82% 35%; /* teal-700 */
+        --color-user-bubble: 173 58% 50%; /* cyan-500 */
+        --color-ai-bubble: 167 36% 92%;   /* teal-100 */
+        --color-text-strong: 174 58% 22%; /* teal-900 */
+        --color-text-subtle: 174 42% 38%; /* teal-700 */
+        --color-input-bg: 167 36% 96%;  /* teal-50 */
+        --color-border: 167 36% 88%;      /* teal-200 */
+      }
+
+      /* Utility function for HSL colors in Tailwind */
+      .bg-body { background-color: hsl(var(--color-bg-body)); }
+      .bg-main { background-color: hsl(var(--color-bg-main)); }
+      .bg-primary-600 { background-color: hsl(var(--color-primary-600)); }
+      .hover\\:bg-primary-700:hover { background-color: hsl(var(--color-primary-700)); }
+      .bg-user-bubble { background-color: hsl(var(--color-user-bubble)); }
+      .bg-ai-bubble { background-color: hsl(var(--color-ai-bubble)); }
+      .text-strong { color: hsl(var(--color-text-strong)); }
+      .text-subtle { color: hsl(var(--color-text-subtle)); }
+      .bg-input { background-color: hsl(var(--color-input-bg)); }
+      .border-themed { border-color: hsl(var(--color-border)); }
+      .focus\\:ring-primary-600:focus { --tw-ring-color: hsl(var(--color-primary-600)); }
+      
+      @keyframes thinking {
+        0%, 100% { transform: translateY(0) scale(1); }
+        50% { transform: translateY(-4px) scale(1.02); }
+      }
+      .animate-thinking { animation: thinking 1.8s ease-in-out infinite; }
+
+      @keyframes pop-in {
+        0% { opacity: 0; transform: scale(0.9) translateY(10px); }
+        100% { opacity: 1; transform: scale(1) translateY(0); }
+      }
+      .message-pop-in { animation: pop-in 0.3s ease-out forwards; }
+
+      .doodle-bg {
+        background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d4d4d8' fill-opacity='0.2'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+      }
+
+      .ascii-art {
+        font-family: 'Courier New', Courier, monospace;
+        white-space: pre;
+        line-height: 1;
+        font-size: 8px; /* Small font size for better detail */
+        letter-spacing: -0.5px;
+        overflow-x: auto;
+        background-color: hsla(var(--color-text-strong), 0.05);
+        padding: 1rem;
+        border-radius: 0.75rem;
+        margin-top: 0.5rem;
+      }
+    </style>
+
+<link rel="stylesheet" href="/index.css">
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.1.1/",
+    "react": "https://aistudiocdn.com/react@^19.1.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.16.0",
+    "jspdf": "https://aistudiocdn.com/jspdf@^2.5.1"
+  }
+}
+</script>
+  <script type="module" crossorigin src="/your-repo-name/assets/index-CnAqASCx.js"></script>
+</head>
+  <body class="bg-body transition-colors duration-500">
+    <div id="root"></div>
+  </body>
+</html>
