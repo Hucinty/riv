@@ -1,0 +1,7 @@
+{
+  "name": "AI Friend Chat",
+  "description": "A simple chat application where you can talk to a friendly AI avatar. The AI is designed to be a simple, direct conversational partner, avoiding complex or overly formal language.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
