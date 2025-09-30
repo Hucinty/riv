@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { UserInfo } from '../types';
 
-const generateContent = (userInfo: UserInfo, facts: string[]): string => {
+export const generateContent = (userInfo: UserInfo, facts: string[]): string => {
   let content = `Information Profile for ${userInfo.name}\n`;
   content += `AI Companion Name: ${userInfo.aiName}\n`;
   content += `-----------------------------------------\n\n`;

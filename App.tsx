@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Message as MessageType, Sender, Mood, UserInfo } from './types';
-import { createChatSession, getInitialGreeting, sendMessageStreamToAI, generateImage, imageToAscii, generateAvatarImage } from './services/geminiService';
+import { createChatSession, getInitialGreeting, sendMessageStreamToAI, generateImage, imageToAscii, LiveSession, AudioPlayer } from './services/geminiService';
 import { ChatWindow } from './components/ChatWindow';
 import { Onboarding } from './components/Onboarding';
 import { Chat } from '@google/genai';
@@ -13,6 +13,8 @@ interface ImageInput {
     previewUrl: string;
 }
 
+const ALL_MOODS: Readonly<Mood[]> = ['neutral', 'happy', 'sad', 'playful', 'curious', 'code'];
+
 const App: React.FC = () => {
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -21,17 +23,24 @@ const App: React.FC = () => {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [chat, setChat] = useState<Chat | null>(null);
   const [learnedFacts, setLearnedFacts] = useState<string[]>([]);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [avatarCache, setAvatarCache] = useState<Partial<Record<Mood, string>>>({});
-  const [isImageGenerationEnabled, setIsImageGenerationEnabled] = useState<boolean>(() => {
-    const saved = localStorage.getItem('imageGenerationEnabled');
-    return saved !== null ? JSON.parse(saved) : true;
-  });
+  const moodIndexRef = useRef(0);
+
+  // Voice Session State
+  const [liveSession, setLiveSession] = useState<LiveSession | null>(null);
+  const [isVoiceSessionActive, setIsVoiceSessionActive] = useState(false);
+  const audioPlayer = useRef<AudioPlayer | null>(null);
+  const partialMessageId = useRef<string | null>(null);
 
   useEffect(() => {
-    localStorage.setItem('imageGenerationEnabled', JSON.stringify(isImageGenerationEnabled));
-  }, [isImageGenerationEnabled]);
+    // Initialize the audio player once.
+    audioPlayer.current = new AudioPlayer();
+  }, []);
 
+  const cycleMood = useCallback(() => {
+    if (isManualMood) return;
+    moodIndexRef.current = (moodIndexRef.current + 1) % ALL_MOODS.length;
+    setMood(ALL_MOODS[moodIndexRef.current]);
+  }, [isManualMood]);
 
   const handleOnboardingComplete = useCallback(async (info: UserInfo, saveToStorage = true) => {
     setIsLoading(true);
@@ -47,9 +56,10 @@ const App: React.FC = () => {
       const userLang = navigator.language || 'en';
       const initialResponse = await getInitialGreeting(chatSession, info.aiName, userLang);
       
-      if (!isManualMood) {
-          setMood(initialResponse.mood);
-      }
+      const initialMood = 'neutral';
+      moodIndexRef.current = ALL_MOODS.indexOf(initialMood);
+      setMood(initialMood);
+
       setMessages([{
         id: crypto.randomUUID(),
         text: initialResponse.text,
@@ -70,7 +80,7 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [isManualMood]);
+  }, []);
   
   useEffect(() => {
     const storedUserInfo = localStorage.getItem('userInfo');
@@ -82,46 +92,7 @@ const App: React.FC = () => {
   }, [handleOnboardingComplete]);
 
 
-  useEffect(() => {
-    if (!userInfo) return;
-    
-    if (!isImageGenerationEnabled) {
-      if (avatarUrl !== null) setAvatarUrl(null);
-      return;
-    }
-
-    const generateAndCacheAvatar = async (currentMood: Mood) => {
-        if (avatarCache[currentMood]) {
-            setAvatarUrl(avatarCache[currentMood]);
-            return;
-        }
-
-        // Don't clear avatar, just generate new one in background for better UX
-        try {
-            const newAvatarBase64 = await generateAvatarImage(userInfo, currentMood);
-            if (newAvatarBase64) {
-                const newAvatarUrl = `data:image/jpeg;base64,${newAvatarBase64}`;
-                setAvatarUrl(newAvatarUrl);
-                setAvatarCache(prev => ({ ...prev, [currentMood]: newAvatarUrl }));
-            }
-        } catch (error) {
-            console.error("Failed to generate new avatar:", error);
-        }
-    };
-    
-    // Debounce avatar generation to prevent hitting rate limits on rapid mood changes.
-    const handler = setTimeout(() => {
-      generateAndCacheAvatar(mood);
-    }, 2000);
-
-    return () => {
-      clearTimeout(handler);
-    };
-
-  }, [mood, userInfo, avatarCache, isImageGenerationEnabled]);
-
-
-  const handleSendMessage = useCallback(async (text: string, image?: ImageInput) => {
+  const handleSendMessage = useCallback(async (text: string, image?: ImageInput, options?: { isCode?: boolean }) => {
     if ((!text.trim() && !image) || !chat) return;
 
     const userMessage: MessageType = {
@@ -139,19 +110,10 @@ const App: React.FC = () => {
     };
 
     setMessages(prev => [...prev, userMessage, aiMessagePlaceholder]);
+    cycleMood();
     setIsLoading(true);
 
     const handleImageGeneration = async (prompt: string) => {
-        if (!isImageGenerationEnabled) {
-             setMessages(prev => prev.map(m => m.id === aiMessageId ? {
-                ...m,
-                text: "Image generation is currently disabled. You can re-enable it in the header.",
-            } : m));
-            setIsLoading(false);
-            if (!isManualMood) setMood('neutral');
-            return;
-        }
-
         try {
             const imageBase64 = await generateImage(prompt);
             const asciiArt = await imageToAscii(imageBase64);
@@ -162,33 +124,31 @@ const App: React.FC = () => {
             } : m));
         } catch (error: any) {
             console.error("Image generation process failed:", error);
-            const errorMessage = error.toString();
-            const isRateLimitError = errorMessage.includes('429') || errorMessage.includes('RESOURCE_EXHAUSTED');
-
-            const userFacingMessage = isRateLimitError
-                ? "I'm a bit busy creating things right now! Please try asking for an image again in a little bit."
-                : "I tried to create an image, but something went wrong. Let's try something else!";
-
-            setMessages(prev => prev.map(m => m.id === aiMessageId ? {
-                ...m,
-                text: userFacingMessage,
-            } : m));
-
-            if (!isManualMood) setMood('sad');
+            // Silently fail by removing the placeholder message
+            setMessages(prev => prev.filter(m => m.id !== aiMessageId));
         } finally {
             setIsLoading(false);
+            cycleMood();
         }
     };
+    
+    const textForAI = options?.isCode ? `Generate a code snippet for: ${text}` : text;
 
     sendMessageStreamToAI(
         chat,
-        text,
+        textForAI,
         image ? { data: image.data, mimeType: image.mimeType } : undefined,
         {
             onData: (data) => {
-                if (!isManualMood) setMood(data.mood);
                 if (data.learned_facts.length > 0) {
                     setLearnedFacts(prev => [...new Set([...prev, ...data.learned_facts])]);
+                }
+                if (data.is_code_block && data.code_block_content && data.code_block_language) {
+                    setMessages(prev => prev.map(m => m.id === aiMessageId ? {
+                        ...m,
+                        codeBlockContent: data.code_block_content,
+                        codeBlockLanguage: data.code_block_language,
+                    } : m));
                 }
             },
             onChunk: (textChunk) => {
@@ -199,22 +159,86 @@ const App: React.FC = () => {
             },
             onComplete: () => {
                 setIsLoading(false);
+                cycleMood();
             },
             onError: (err) => {
                 console.error("Streaming Error:", err);
-                const errorMessage: MessageType = {
-                    id: crypto.randomUUID(),
-                    text: 'Sorry, I hit a snag. Could you try that again?',
-                    sender: Sender.AI,
-                };
-                // Replace placeholder with error message
-                setMessages(prev => [...prev.filter(m => m.id !== aiMessageId), errorMessage]);
-                if (!isManualMood) setMood('sad');
+                // Display an error message to the user instead of failing silently.
+                setMessages(prev => prev.map(m => 
+                    m.id === aiMessageId 
+                    ? { ...m, text: "I'm sorry, I had a little trouble responding. Could you please try that again?" } 
+                    : m
+                ));
                 setIsLoading(false);
+                cycleMood();
             }
         }
     );
-  }, [chat, isManualMood, isImageGenerationEnabled]);
+  }, [chat, cycleMood]);
+
+  const handleToggleVoiceSession = async () => {
+    if (isVoiceSessionActive) {
+      await liveSession?.stop();
+      return;
+    }
+    
+    if (!userInfo) return;
+    
+    const handleTranscriptionUpdate = (text: string, isFinal: boolean, sender: Sender) => {
+        if (!partialMessageId.current) {
+            const newId = crypto.randomUUID();
+            partialMessageId.current = newId;
+            setMessages(prev => [...prev, { id: newId, text, sender, isPartial: true }]);
+        } else {
+            setMessages(prev => prev.map(m => m.id === partialMessageId.current ? { ...m, text, isPartial: !isFinal } : m));
+            if (isFinal) {
+                partialMessageId.current = null;
+            }
+        }
+    };
+
+    const session = new LiveSession(userInfo, {
+        onTranscriptionUpdate: handleTranscriptionUpdate,
+        onAudioUpdate: (audioData) => {
+            audioPlayer.current?.play(audioData);
+        },
+        onToolCall: (name, args) => {
+            if (name === 'playMusic') {
+                const songInfo = args.artist ? `${args.songName} by ${args.artist}` : args.songName;
+                const systemMessage: MessageType = {
+                    id: crypto.randomUUID(),
+                    text: `[System: Playing "${songInfo}"]`,
+                    sender: Sender.AI
+                };
+                setMessages(prev => [...prev, systemMessage]);
+            }
+        },
+        onClose: () => {
+            setIsVoiceSessionActive(false);
+            setLiveSession(null);
+            partialMessageId.current = null;
+            audioPlayer.current?.stopAll();
+        },
+        onError: (error) => {
+            console.error('Live session error:', error);
+            const errorMessage: MessageType = {
+                id: crypto.randomUUID(),
+                text: "[System: Sorry, the voice connection failed.]",
+                sender: Sender.AI
+            };
+            setMessages(prev => [...prev, errorMessage]);
+        }
+    });
+
+    try {
+      await session.start();
+      setLiveSession(session);
+      setIsVoiceSessionActive(true);
+    } catch(error) {
+       console.error("Failed to start live session:", error);
+       alert("Could not start voice chat. Please ensure your microphone is enabled and permissions are granted.");
+    }
+  };
   
   const handleMoodChange = (newMood: Mood | 'auto') => {
     if (newMood === 'auto') {
@@ -222,6 +246,10 @@ const App: React.FC = () => {
     } else {
         setIsManualMood(true);
         setMood(newMood);
+        const newIndex = ALL_MOODS.indexOf(newMood);
+        if (newIndex > -1) {
+            moodIndexRef.current = newIndex;
+        }
     }
   };
 
@@ -243,19 +271,19 @@ const App: React.FC = () => {
   }
 
   return (
-    <div data-theme={mood} className="bg-body font-sans flex items-center justify-center min-h-screen transition-colors duration-500">
+    <div data-theme={mood} className="bg-body font-sans min-h-screen transition-colors duration-500">
       <ChatWindow
         messages={messages}
         onSendMessage={handleSendMessage}
         isLoading={isLoading}
-        avatarUrl={avatarUrl}
-        aiName={userInfo.aiName}
+        userInfo={userInfo}
+        learnedFacts={learnedFacts}
         currentMood={mood}
         isManualMood={isManualMood}
         onMoodChange={handleMoodChange}
         onExport={handleExport}
-        isImageGenerationEnabled={isImageGenerationEnabled}
-        onImageGenerationToggle={setIsImageGenerationEnabled}
+        isVoiceSessionActive={isVoiceSessionActive}
+        onToggleVoiceSession={handleToggleVoiceSession}
       />
     </div>
   );

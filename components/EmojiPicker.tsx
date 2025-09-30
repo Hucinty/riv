@@ -13,7 +13,7 @@ const emojis = [
 
 export const EmojiPicker: React.FC<EmojiPickerProps> = ({ onEmojiSelect, onClose }) => {
   return (
-    <div className="absolute bottom-20 right-0 bg-main p-3 rounded-2xl shadow-lg border border-themed z-10 w-60">
+    <div className="absolute bottom-20 right-0 bg-main p-3 rounded-2xl shadow-lg border border-themed z-10 w-60 animate-subtle-slide-in-up">
        <div className="grid grid-cols-6 gap-2">
         {emojis.map(emoji => (
           <button

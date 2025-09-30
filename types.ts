@@ -9,9 +9,12 @@ export interface Message {
   sender: Sender;
   imageUrl?: string;
   asciiArt?: string;
+  codeBlockContent?: string;
+  codeBlockLanguage?: string;
+  isPartial?: boolean;
 }
 
-export type Mood = 'neutral' | 'happy' | 'sad' | 'playful' | 'curious';
+export type Mood = 'neutral' | 'happy' | 'sad' | 'playful' | 'curious' | 'code';
 
 export interface UserInfo {
   name: string;
